@@ -1,4 +1,4 @@
 window.__OBIECTIVE_CONFIG__ = {
-  supabaseUrl: "PASTE_SUPABASE_PROJECT_URL_HERE",
-  supabaseAnonKey: "PASTE_SUPABASE_ANON_KEY_HERE"
+  supabaseUrl: "https://ksilhnewmstrwpvnebyk.supabase.co",
+  supabaseAnonKey: "sb_publishable_wWWiKd4_3ou0SDxR84nHWQ_Q3hIyUhI"
 };
