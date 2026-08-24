@@ -1,0 +1,13 @@
+{
+  "name": "Obiective financiare",
+  "short_name": "Obiective",
+  "description": "Obiective, plăți recurente și rezervă lunară într-un seif privat.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f4f7fb",
+  "theme_color": "#2563eb",
+  "icons": [
+    { "src": "./app-icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "./app-icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
