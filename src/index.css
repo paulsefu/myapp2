@@ -414,7 +414,7 @@ select:focus-visible,
 
 .summary-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.65fr) minmax(280px, 0.65fr);
+  grid-template-columns: minmax(0, 1.35fr) repeat(2, minmax(220px, 0.8fr));
   gap: 18px;
 }
 
@@ -443,6 +443,18 @@ select:focus-visible,
   font-size: clamp(1.9rem, 5vw, 2.75rem);
   line-height: 1;
   letter-spacing: -0.055em;
+}
+
+.summary-card small {
+  display: block;
+  margin-top: 11px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 650;
+}
+
+.summary-primary small {
+  color: rgba(255, 255, 255, 0.72);
 }
 
 .summary-primary {
@@ -515,6 +527,203 @@ select:focus-visible,
 
 @keyframes pulse {
   50% { opacity: 0.42; }
+}
+
+.tracking-panel {
+  margin-bottom: 18px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.tracking-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 24px 26px 20px;
+}
+
+.tracking-heading h2 {
+  margin: 0;
+  font-size: 1.35rem;
+  letter-spacing: -0.035em;
+}
+
+.tracking-copy {
+  max-width: 650px;
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.month-picker {
+  display: grid;
+  min-width: 245px;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.month-picker select {
+  min-height: 43px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  padding: 0 34px 0 12px;
+  background: var(--surface-alt);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.tracking-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  border-block: 1px solid var(--border);
+  background: var(--border);
+}
+
+.tracking-stats > div {
+  padding: 17px 26px;
+  background: var(--surface-alt);
+}
+
+.tracking-stats span,
+.tracking-stats strong {
+  display: block;
+}
+
+.tracking-stats span {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.tracking-stats strong {
+  margin-top: 5px;
+  font-size: 1.15rem;
+}
+
+.tracking-stats .tracking-alert strong,
+.tracking-status.is-behind strong {
+  color: #b45309;
+}
+
+.tracking-stats .tracking-ok strong,
+.tracking-status.is-complete strong {
+  color: var(--success);
+}
+
+.tracking-list {
+  display: grid;
+}
+
+.tracking-row {
+  display: grid;
+  grid-template-columns: minmax(210px, 1.4fr) minmax(180px, 0.8fr) auto minmax(110px, 0.45fr);
+  align-items: end;
+  gap: 16px;
+  padding: 17px 26px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tracking-objective {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 11px;
+}
+
+.tracking-objective > div {
+  min-width: 0;
+}
+
+.tracking-objective strong,
+.tracking-objective small {
+  display: block;
+}
+
+.tracking-objective strong {
+  overflow: hidden;
+  font-size: 0.9rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tracking-objective small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.tracking-input {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 750;
+}
+
+.tracking-input input {
+  min-height: 42px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: white;
+}
+
+.tracking-full-button {
+  min-height: 42px;
+  white-space: nowrap;
+}
+
+.tracking-status {
+  padding-bottom: 5px;
+  text-align: right;
+}
+
+.tracking-status span,
+.tracking-status strong {
+  display: block;
+}
+
+.tracking-status span {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.tracking-status strong {
+  margin-top: 4px;
+  font-size: 0.95rem;
+}
+
+.tracking-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 17px 26px 21px;
+}
+
+.tracking-empty {
+  padding: 25px 26px;
+  color: var(--muted);
+  font-size: 0.84rem;
+  text-align: center;
+}
+
+.tracking-success {
+  margin: 16px 26px 0;
+  border-radius: 11px;
+  padding: 10px 12px;
+  background: #ecfdf3;
+  color: #15803d;
+  font-size: 0.82rem;
+  font-weight: 650;
 }
 
 .objectives-panel {
@@ -1085,11 +1294,33 @@ select:focus-visible,
   }
 
   .summary-grid {
-    grid-template-columns: 1fr 0.72fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .summary-primary {
+    grid-column: 1 / -1;
   }
 
   .summary-card {
     padding: 24px 22px;
+  }
+
+  .tracking-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .month-picker {
+    width: min(100%, 340px);
+  }
+
+  .tracking-row {
+    grid-template-columns: minmax(180px, 1fr) minmax(170px, 0.8fr);
+    align-items: end;
+  }
+
+  .tracking-full-button {
+    justify-self: start;
   }
 
   .desktop-table-wrap {
@@ -1232,6 +1463,10 @@ select:focus-visible,
     gap: 11px;
   }
 
+  .summary-primary {
+    grid-column: auto;
+  }
+
   .summary-card {
     min-height: 126px;
     border-radius: 19px;
@@ -1264,6 +1499,78 @@ select:focus-visible,
   .vault-status {
     margin: 8px 2px 0;
     font-size: 0.7rem;
+  }
+
+  .tracking-panel {
+    border-radius: 19px;
+  }
+
+  .tracking-heading {
+    gap: 17px;
+    padding: 19px 17px 17px;
+  }
+
+  .tracking-heading h2 {
+    font-size: 1.15rem;
+  }
+
+  .month-picker {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .tracking-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .tracking-stats > div {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 12px 17px;
+  }
+
+  .tracking-stats strong {
+    margin-top: 0;
+    font-size: 1rem;
+  }
+
+  .tracking-row {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    padding: 16px 17px;
+  }
+
+  .tracking-full-button {
+    width: 100%;
+  }
+
+  .tracking-status {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0;
+    text-align: left;
+  }
+
+  .tracking-status strong {
+    margin-top: 0;
+  }
+
+  .tracking-actions {
+    padding: 15px 17px 19px;
+  }
+
+  .tracking-actions .button {
+    width: 100%;
+  }
+
+  .tracking-empty {
+    padding-inline: 17px;
+  }
+
+  .tracking-success {
+    margin-inline: 17px;
   }
 
   .status-time {

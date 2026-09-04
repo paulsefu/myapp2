@@ -4,6 +4,15 @@ Aceasta este copia aplicației „Obiective financiare”, adaptată să ruleze 
 
 Designul, seiful criptat, cheia de recuperare, tabelul, calculele, obiectivele, categoriile, importul JSON și plățile recurente au fost păstrate din aplicația originală.
 
+## Nou în versiunea 1.1
+
+- secțiune „Evidența lunară” pentru toate lunile de la începerea obiectivelor;
+- suma planificată și suma pusă efectiv pentru fiecare obiectiv și lună;
+- restanțele lunilor anterioare sunt adăugate automat la totalul de pus acum;
+- buton „Am pus integral” pentru completarea rapidă a unei sume;
+- data de început este disponibilă și pentru plățile recurente lunare;
+- datele vechi sunt actualizate automat la noua structură, fără alt script SQL.
+
 ## Ce rămâne privat
 
 - Fiecare utilizator are propriul cont Supabase.

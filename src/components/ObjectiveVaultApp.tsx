@@ -9,15 +9,22 @@ import {
   type FormEvent,
 } from "react";
 import {
+  contributionForMonth,
   computeObjective,
+  currentIsoDate,
+  currentTrackingSummary,
   demoVaultData,
   emptyVaultData,
   formatMoney,
+  formatMonthLabel,
   isoToRomanianDate,
+  monthKey,
+  monthlyTrackingTotals,
   nextRecurringDate,
+  objectivePlannedAmountForMonth,
   parseMoneyInput,
   romanianDateToIso,
-  totalMonthlyAmount,
+  trackedMonthKeys,
   type Objective,
   type RecurrenceType,
   type VaultData,
@@ -112,9 +119,15 @@ function parseDesktopObjectives(value: unknown): Objective[] {
           ? interval
           : null,
       data_start_recurenta:
-        recurrenceType === "zile"
+        recurring
           ? String(source.data_start_recurenta ?? source.data_tinta ?? "").trim()
           : "",
+      created_at:
+        typeof source.created_at === "string" && source.created_at
+          ? source.created_at
+          : recurring && String(source.data_start_recurenta ?? "").trim()
+            ? romanianDateToIso(String(source.data_start_recurenta))
+            : currentIsoDate(),
     };
     const computed = computeObjective(objective);
     return {
@@ -322,6 +335,7 @@ export default function ObjectiveVaultApp({
           : objective.data_tinta,
       zile_ramase: computed.daysRemaining ?? 0,
       suma_luna: Math.round(computed.monthlyAmount * 100) / 100,
+      created_at: objective.created_at || currentIsoDate(),
     };
     const exists = vaultData.objectives.some((item) => item.id === normalized.id);
     const objectives = exists
@@ -347,6 +361,9 @@ export default function ObjectiveVaultApp({
     await persistData({
       ...vaultData,
       objectives: vaultData.objectives.filter((item) => item.id !== objective.id),
+      contributions: vaultData.contributions.filter(
+        (entry) => entry.objective_id !== objective.id,
+      ),
     });
     setSelectedId(null);
     setEditorObjective(null);
@@ -382,8 +399,46 @@ export default function ObjectiveVaultApp({
         ...imported.map((objective) => objective.categorie),
       ]),
     );
-    await persistData({ ...vaultData, objectives: imported, categories });
+    await persistData({
+      ...vaultData,
+      objectives: imported,
+      categories,
+      contributions: [],
+    });
     setSelectedId(null);
+  }
+
+  async function saveMonthlyContributions(
+    selectedMonth: string,
+    amounts: Record<string, number>,
+  ) {
+    if (!vaultData) return;
+    const validObjectiveIds = new Set(
+      vaultData.objectives.map((objective) => objective.id),
+    );
+    const touchedIds = new Set(Object.keys(amounts));
+    const untouched = vaultData.contributions.filter(
+      (entry) =>
+        entry.luna !== selectedMonth || !touchedIds.has(entry.objective_id),
+    );
+    const updatedAt = new Date().toISOString();
+    const replacements = Object.entries(amounts)
+      .filter(
+        ([objectiveId, amount]) =>
+          validObjectiveIds.has(objectiveId) &&
+          Number.isFinite(amount) &&
+          amount > 0,
+      )
+      .map(([objectiveId, amount]) => ({
+        objective_id: objectiveId,
+        luna: selectedMonth,
+        suma_pusa: Math.round(amount * 100) / 100,
+        updated_at: updatedAt,
+      }));
+    await persistData({
+      ...vaultData,
+      contributions: [...untouched, ...replacements],
+    });
   }
 
   if (mode === "loading") return <LoadingScreen />;
@@ -436,6 +491,7 @@ export default function ObjectiveVaultApp({
       onSelect={(id) => setSelectedId((current) => (current === id ? null : id))}
       onAdd={() => setEditorObjective("new")}
       onImport={importDesktopData}
+      onSaveContributions={saveMonthlyContributions}
       onEdit={() => selected && setEditorObjective(selected)}
       onLock={lockVault}
       onSignOut={onSignOut}
@@ -701,6 +757,7 @@ function VaultDashboard({
   onSelect,
   onAdd,
   onImport,
+  onSaveContributions,
   onEdit,
   onLock,
   onSignOut,
@@ -715,6 +772,10 @@ function VaultDashboard({
   onSelect: (id: string) => void;
   onAdd: () => void;
   onImport: (file: File) => Promise<void>;
+  onSaveContributions: (
+    selectedMonth: string,
+    amounts: Record<string, number>,
+  ) => Promise<void>;
   onEdit: () => void;
   onLock: () => void;
   onSignOut: () => Promise<void> | void;
@@ -725,15 +786,55 @@ function VaultDashboard({
   );
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState("");
+  const [selectedMonth, setSelectedMonth] = useState(() => monthKey());
+  const [contributionDraft, setContributionDraft] = useState<
+    Record<string, string>
+  >({});
+  const [trackingSaving, setTrackingSaving] = useState(false);
+  const [trackingMessage, setTrackingMessage] = useState("");
+  const [trackingError, setTrackingError] = useState("");
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const computed = useMemo(
     () => data.objectives.map((objective) => computeObjective(objective)),
     [data.objectives],
   );
-  const total = useMemo(
-    () => totalMonthlyAmount(data.objectives),
+  const availableMonths = useMemo(
+    () => trackedMonthKeys(data.objectives),
     [data.objectives],
   );
+  const trackingRows = useMemo(
+    () =>
+      data.objectives
+        .map((objective) => ({
+          objective,
+          planned: objectivePlannedAmountForMonth(objective, selectedMonth),
+          contributed: contributionForMonth(
+            data.contributions,
+            objective.id,
+            selectedMonth,
+          ),
+        }))
+        .filter((row) => row.planned > 0 || row.contributed > 0),
+    [data.contributions, data.objectives, selectedMonth],
+  );
+  const trackingTotals = useMemo(
+    () => monthlyTrackingTotals(data, selectedMonth),
+    [data, selectedMonth],
+  );
+  const trackingSummary = useMemo(
+    () => currentTrackingSummary(data),
+    [data],
+  );
+
+  useEffect(() => {
+    const nextDraft: Record<string, string> = {};
+    for (const row of trackingRows) {
+      nextDraft[row.objective.id] = row.contributed
+        ? String(row.contributed).replace(".", ",")
+        : "";
+    }
+    setContributionDraft(nextDraft);
+  }, [selectedMonth, data.contributions, trackingRows]);
 
   useEffect(() => {
     function captureInstallPrompt(event: Event) {
@@ -764,6 +865,44 @@ function VaultDashboard({
     } finally {
       setImporting(false);
       if (importInputRef.current) importInputRef.current.value = "";
+    }
+  }
+
+  function parseContributionValue(value: string): number | null {
+    if (!value.trim()) return 0;
+    const amount = Number(value.trim().replace(/\s/g, "").replace(",", "."));
+    return Number.isFinite(amount) && amount >= 0 ? amount : null;
+  }
+
+  async function saveTrackingMonth() {
+    setTrackingError("");
+    setTrackingMessage("");
+    const amounts: Record<string, number> = {};
+    for (const row of trackingRows) {
+      const amount = parseContributionValue(
+        contributionDraft[row.objective.id] ?? "",
+      );
+      if (amount === null) {
+        setTrackingError(
+          `Verifică suma introdusă pentru „${row.objective.denumire}”.`,
+        );
+        return;
+      }
+      amounts[row.objective.id] = amount;
+    }
+
+    setTrackingSaving(true);
+    try {
+      await onSaveContributions(selectedMonth, amounts);
+      setTrackingMessage(`Sumele pentru ${formatMonthLabel(selectedMonth)} au fost salvate.`);
+    } catch (error) {
+      setTrackingError(
+        error instanceof Error
+          ? error.message
+          : "Sumele lunii nu au putut fi salvate.",
+      );
+    } finally {
+      setTrackingSaving(false);
     }
   }
 
@@ -811,8 +950,9 @@ function VaultDashboard({
         <section className="summary-grid" aria-label="Rezumat">
           <article className="summary-card summary-primary">
             <div>
-              <p>Total de pus deoparte luna aceasta</p>
-              <strong>{formatMoney(total)}</strong>
+              <p>Total de pus acum</p>
+              <strong>{formatMoney(trackingSummary.dueNow)}</strong>
+              <small>Planul lunii + eventualele restanțe</small>
             </div>
             <div className="summary-icon" aria-hidden="true">
               ↗
@@ -820,11 +960,20 @@ function VaultDashboard({
           </article>
           <article className="summary-card">
             <div>
-              <p>Obiective și plăți active</p>
-              <strong>{data.objectives.length}</strong>
+              <p>Restanță din lunile trecute</p>
+              <strong>{formatMoney(trackingSummary.previousShortfall)}</strong>
             </div>
             <div className="summary-icon pale" aria-hidden="true">
-              ◎
+              ↺
+            </div>
+          </article>
+          <article className="summary-card">
+            <div>
+              <p>Ai pus luna aceasta</p>
+              <strong>{formatMoney(trackingSummary.contributedThisMonth)}</strong>
+            </div>
+            <div className="summary-icon pale" aria-hidden="true">
+              ✓
             </div>
           </article>
         </section>
@@ -836,6 +985,138 @@ function VaultDashboard({
             <span className="status-time">
               Ultima salvare {new Date(lastSavedAt).toLocaleString("ro-RO", { dateStyle: "short", timeStyle: "short" })}
             </span>
+          )}
+        </section>
+
+        <section className="tracking-panel">
+          <div className="tracking-heading">
+            <div>
+              <p className="eyebrow">ISTORICUL DEPUNERILOR</p>
+              <h2>Evidența lunară</h2>
+              <p className="tracking-copy">
+                Completează cât ai pus efectiv. Orice diferență rămasă din
+                lunile anterioare se adaugă automat la totalul de pus acum.
+              </p>
+            </div>
+            <label className="month-picker">
+              Luna verificată
+              <select
+                value={selectedMonth}
+                onChange={(event) => {
+                  setSelectedMonth(event.target.value);
+                  setTrackingMessage("");
+                  setTrackingError("");
+                }}
+              >
+                {availableMonths.map((month) => {
+                  const totals = monthlyTrackingTotals(data, month);
+                  const suffix = totals.remaining > 0 ? " — de completat" : " — complet";
+                  return (
+                    <option key={month} value={month}>
+                      {formatMonthLabel(month)}{suffix}
+                    </option>
+                  );
+                })}
+              </select>
+            </label>
+          </div>
+
+          <div className="tracking-stats" aria-label="Rezumatul lunii selectate">
+            <div>
+              <span>Trebuia pus</span>
+              <strong>{formatMoney(trackingTotals.planned)}</strong>
+            </div>
+            <div>
+              <span>Ai înregistrat</span>
+              <strong>{formatMoney(trackingTotals.contributed)}</strong>
+            </div>
+            <div className={trackingTotals.remaining > 0 ? "tracking-alert" : "tracking-ok"}>
+              <span>Diferență</span>
+              <strong>{formatMoney(trackingTotals.remaining)}</strong>
+            </div>
+          </div>
+
+          {trackingRows.length === 0 ? (
+            <div className="tracking-empty">
+              Nu există sume planificate pentru luna selectată.
+            </div>
+          ) : (
+            <div className="tracking-list">
+              {trackingRows.map(({ objective, planned }) => {
+                const draftValue = contributionDraft[objective.id] ?? "";
+                const draftAmount = parseContributionValue(draftValue) ?? 0;
+                const remaining = Math.max(planned - draftAmount, 0);
+                const complete = planned > 0 && remaining <= 0;
+                return (
+                  <div className="tracking-row" key={objective.id}>
+                    <div className="tracking-objective">
+                      <span className="category-glyph" aria-hidden="true">
+                        {categoryGlyph(objective.categorie)}
+                      </span>
+                      <div>
+                        <strong>{objective.denumire}</strong>
+                        <small>Trebuia: {formatMoney(planned)}</small>
+                      </div>
+                    </div>
+                    <label className="tracking-input">
+                      <span>Ai pus</span>
+                      <div className="money-input">
+                        <input
+                          inputMode="decimal"
+                          value={draftValue}
+                          onChange={(event) =>
+                            setContributionDraft((current) => ({
+                              ...current,
+                              [objective.id]: event.target.value,
+                            }))
+                          }
+                          placeholder="0,00"
+                          aria-label={`Suma pusă pentru ${objective.denumire}`}
+                        />
+                        <span>RON</span>
+                      </div>
+                    </label>
+                    <button
+                      className="button button-soft tracking-full-button"
+                      type="button"
+                      onClick={() =>
+                        setContributionDraft((current) => ({
+                          ...current,
+                          [objective.id]: String(planned).replace(".", ","),
+                        }))
+                      }
+                    >
+                      Am pus integral
+                    </button>
+                    <div className={`tracking-status ${complete ? "is-complete" : "is-behind"}`}>
+                      <span>{complete ? "Complet" : selectedMonth < monthKey() ? "Restant" : "Mai trebuie"}</span>
+                      <strong>{formatMoney(remaining)}</strong>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {(trackingError || trackingMessage) && (
+            <p
+              className={trackingError ? "panel-error" : "tracking-success"}
+              role={trackingError ? "alert" : "status"}
+            >
+              {trackingError || trackingMessage}
+            </p>
+          )}
+          {trackingRows.length > 0 && (
+            <div className="tracking-actions">
+              <button
+                className="button button-primary"
+                type="button"
+                disabled={trackingSaving}
+                onClick={() => void saveTrackingMonth()}
+              >
+                {trackingSaving ? "Se salvează…" : "Salvează sumele lunii"}
+              </button>
+            </div>
           )}
         </section>
 
@@ -1045,7 +1326,11 @@ function ObjectiveEditor({
     String(objective?.interval_zile ?? 28),
   );
   const [startDate, setStartDate] = useState(
-    objective ? romanianDateToIso(objective.data_start_recurenta) : "",
+    objective
+      ? romanianDateToIso(objective.data_start_recurenta) ||
+          objective.created_at?.slice(0, 10) ||
+          currentIsoDate()
+      : currentIsoDate(),
   );
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -1078,7 +1363,8 @@ function ObjectiveEditor({
           ? interval
           : null,
       data_start_recurenta:
-        recurring && recurrenceType === "zile" ? start : "",
+        recurring ? start : "",
+      created_at: objective?.created_at ?? currentIsoDate(),
     };
     return computeObjective(item);
   }, [category, intervalDays, name, objective?.id, recurrenceType, recurring, startDate, targetDate, value]);
@@ -1091,12 +1377,14 @@ function ObjectiveEditor({
     if (!amount) return setError("Introdu o valoare mai mare decât zero.");
     if (!category.trim()) return setError("Completează categoria.");
     if (!recurring && !targetDate) return setError("Selectează data țintă.");
+    if (recurring) {
+      if (!startDate) return setError("Selectează data de început.");
+    }
     if (recurring && recurrenceType === "zile") {
       const interval = Number(intervalDays);
       if (!Number.isInteger(interval) || interval <= 0) {
         return setError("Numărul de zile trebuie să fie un număr întreg pozitiv.");
       }
-      if (!startDate) return setError("Selectează data de început.");
     }
 
     const item: Objective = {
@@ -1107,6 +1395,7 @@ function ObjectiveEditor({
       categorie: category.trim(),
       zile_ramase: draft.daysRemaining ?? 0,
       suma_luna: Math.round(draft.monthlyAmount * 100) / 100,
+      created_at: objective?.created_at ?? currentIsoDate(),
     };
     delete (item as Partial<typeof draft>).displayDate;
     delete (item as Partial<typeof draft>).daysRemaining;
@@ -1209,10 +1498,21 @@ function ObjectiveEditor({
                   </label>
                 </div>
               )}
+              {recurrenceType === "lunar" && (
+                <label>
+                  Data de început
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(event) => setStartDate(event.target.value)}
+                    onInput={(event) => setStartDate(event.currentTarget.value)}
+                  />
+                </label>
+              )}
               <p className="field-help">
                 {recurrenceType === "zile"
                   ? "Următoarea plată se calculează automat pornind de la data de început."
-                  : "Valoarea integrală este rezervată în fiecare lună, fără dată de încheiere."}
+                  : "Valoarea integrală este rezervată lunar, începând cu luna datei selectate."}
               </p>
             </div>
           )}
