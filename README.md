@@ -4,6 +4,18 @@ Aceasta este copia aplicației „Obiective financiare”, adaptată să ruleze 
 
 Designul, seiful criptat, cheia de recuperare, tabelul, calculele, obiectivele, categoriile, importul JSON și plățile recurente au fost păstrate din aplicația originală.
 
+## Nou în versiunea 1.6
+
+- noul logo cu portofel albastru apare în antet, pe ecranele de autentificare și ca iconiță a aplicației;
+- butonul „Blochează” a fost înlocuit cu „Log Out”;
+- delogarea cere confirmare înainte de a închide sesiunea, inclusiv la apăsarea avatarului.
+
+## Nou în versiunea 1.5
+
+- lunile restante afișează în „Istoric” butonul verde „Am pus”;
+- butonul completează suma lipsă a lunii, inclusiv după o plată parțială;
+- după salvare, luna devine „Pus ✓”, iar restanța și totalul „De pus acum” se recalculează automat.
+
 ## Nou în versiunea 1.4
 
 - lunile care au o sumă înregistrată afișează în „Istoric” butonul „Nu am pus”;

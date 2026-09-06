@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import type { Session } from "@supabase/supabase-js";
 import ObjectiveVaultApp from "./components/ObjectiveVaultApp";
+import AppLogo from "./components/AppLogo";
 import { isSupabaseConfigured, requireSupabase, supabase } from "./lib/supabase";
 
 type AuthMode = "login" | "register";
@@ -18,7 +19,7 @@ function ConfigurationScreen() {
   return (
     <main className="security-page">
       <section className="security-card">
-        <div className="brand-mark" aria-hidden="true">!</div>
+        <AppLogo className="brand-mark" />
         <p className="eyebrow">OBIECTIVE FINANCIARE</p>
         <h1>Lipsește conexiunea</h1>
         <p className="security-copy">
@@ -80,7 +81,7 @@ function AuthScreen() {
   return (
     <main className="security-page">
       <section className="security-card">
-        <div className="brand-mark" aria-hidden="true">◈</div>
+        <AppLogo className="brand-mark" />
         <p className="eyebrow">OBIECTIVE FINANCIARE</p>
         <h1>Planul tău privat</h1>
         <p className="security-copy">

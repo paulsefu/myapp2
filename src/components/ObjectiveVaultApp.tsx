@@ -44,6 +44,7 @@ import {
   saveVaultRecord,
   VaultConflictError,
 } from "../lib/vault-store";
+import AppLogo from "./AppLogo";
 
 type AppMode = "loading" | "setup" | "locked" | "unlocked" | "error";
 type SyncState = "idle" | "syncing" | "saved" | "error" | "demo";
@@ -266,7 +267,7 @@ export default function ObjectiveVaultApp({
         setSyncState("error");
         throw error instanceof VaultConflictError
           ? new Error(
-              "Datele au fost schimbate pe alt dispozitiv. Blochează și redeschide aplicația înainte de a continua.",
+              "Datele au fost schimbate pe alt dispozitiv. Deloghează-te și intră din nou înainte de a continua.",
             )
           : new Error(
               error instanceof Error
@@ -348,16 +349,6 @@ export default function ObjectiveVaultApp({
     setRenewalObjective(null);
     setSyncState("idle");
     setMode("setup");
-  }
-
-  function lockVault() {
-    masterKeyRef.current = null;
-    setVaultData(null);
-    setSelectedId(null);
-    setEditorObjective(null);
-    setRenewalObjective(null);
-    setGlobalError("");
-    setMode(envelope ? "locked" : "setup");
   }
 
   async function saveObjective(objective: Objective) {
@@ -556,7 +547,7 @@ export default function ObjectiveVaultApp({
 
   if (mode === "error") {
     return (
-      <SecurityScreen title="Nu am putut deschide aplicația" icon="!">
+      <SecurityScreen title="Nu am putut deschide aplicația">
         <p className="security-copy">{globalError}</p>
         <button className="button button-primary" onClick={() => location.reload()}>
           Încearcă din nou
@@ -607,7 +598,6 @@ export default function ObjectiveVaultApp({
       onSaveContributions={saveMonthlyContributions}
       onRenew={(objective) => setRenewalObjective(objective)}
       onEdit={() => selected && setEditorObjective(selected)}
-      onLock={lockVault}
       onSignOut={onSignOut}
     >
       {editorObjective && (
@@ -647,19 +637,15 @@ function LoadingScreen() {
 
 function SecurityScreen({
   title,
-  icon,
   children,
 }: {
   title: string;
-  icon: string;
   children: React.ReactNode;
 }) {
   return (
     <main className="security-page">
       <section className="security-card">
-        <div className="brand-mark" aria-hidden="true">
-          {icon}
-        </div>
+        <AppLogo className="brand-mark" />
         <p className="eyebrow">OBIECTIVE FINANCIARE</p>
         <h1>{title}</h1>
         {children}
@@ -706,7 +692,7 @@ function CreateVaultScreen({
   }
 
   return (
-    <SecurityScreen title="Creează seiful privat" icon="◈">
+    <SecurityScreen title="Creează seiful privat">
       <p className="security-copy">
         Bun venit, {displayName}. Parola de mai jos criptează datele direct pe
         dispozitivul tău și nu este trimisă serverului.
@@ -794,8 +780,14 @@ function UnlockScreen({
     }
   }
 
+  function confirmSignOut() {
+    if (window.confirm("Sigur vrei să te deloghezi din aplicație?")) {
+      void onSignOut();
+    }
+  }
+
   return (
-    <SecurityScreen title="Deblochează seiful" icon="◇">
+    <SecurityScreen title="Deblochează seiful">
       <p className="security-copy">
         Salut, {displayName}. Introdu {recovery ? "cheia de recuperare" : "parola de criptare"}.
       </p>
@@ -861,7 +853,7 @@ function UnlockScreen({
           </div>
         </div>
       )}
-      <button className="quiet-link" type="button" onClick={() => void onSignOut()}>
+      <button className="quiet-link" type="button" onClick={confirmSignOut}>
         Ieși din cont
       </button>
     </SecurityScreen>
@@ -881,7 +873,6 @@ function VaultDashboard({
   onSaveContributions,
   onRenew,
   onEdit,
-  onLock,
   onSignOut,
   children,
 }: {
@@ -900,7 +891,6 @@ function VaultDashboard({
   ) => Promise<void>;
   onRenew: (objective: Objective) => void;
   onEdit: () => void;
-  onLock: () => void;
   onSignOut: () => Promise<void> | void;
   children: React.ReactNode;
 }) {
@@ -913,6 +903,7 @@ function VaultDashboard({
     useState<Objective | null>(null);
   const [historyObjective, setHistoryObjective] = useState<Objective | null>(null);
   const [markingAll, setMarkingAll] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const [quickError, setQuickError] = useState("");
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const activeObjectives = useMemo(
@@ -1004,6 +995,22 @@ function VaultDashboard({
     }
   }
 
+  async function confirmSignOut() {
+    if (!window.confirm("Sigur vrei să te deloghezi din aplicație?")) return;
+    setQuickError("");
+    setSigningOut(true);
+    try {
+      await onSignOut();
+    } catch (error) {
+      setQuickError(
+        error instanceof Error
+          ? error.message
+          : "Delogarea nu a putut fi efectuată.",
+      );
+      setSigningOut(false);
+    }
+  }
+
   const syncLabel =
     syncState === "syncing"
       ? "Se sincronizează"
@@ -1018,9 +1025,7 @@ function VaultDashboard({
       <header className="topbar">
         <div className="topbar-inner">
           <div className="brand-row">
-            <div className="mini-brand" aria-hidden="true">
-              ◈
-            </div>
+            <AppLogo className="mini-brand" />
             <div>
               <p className="eyebrow">OBIECTIVE FINANCIARE</p>
               <h1>Banii tăi, în ordine.</h1>
@@ -1032,11 +1037,16 @@ function VaultDashboard({
                 Instalează
               </button>
             )}
-            <button className="button button-soft" onClick={onLock}>
-              Blochează
+            <button
+              className="button button-soft"
+              type="button"
+              disabled={signingOut}
+              onClick={() => void confirmSignOut()}
+            >
+              {signingOut ? "Se deloghează…" : "Log Out"}
             </button>
             {!demoMode && (
-              <button className="avatar" type="button" onClick={() => void onSignOut()} title={`Ieși din cont — ${displayName}`}>
+              <button className="avatar" type="button" onClick={() => void confirmSignOut()} title={`Ieși din cont — ${displayName}`}>
                 {displayName.trim().charAt(0).toUpperCase() || "U"}
               </button>
             )}
@@ -1625,6 +1635,41 @@ function ObjectiveHistoryDialog({
     }
   }
 
+  async function markMonthAsPaid(month: string) {
+    const plannedAmounts = Object.fromEntries(
+      objectiveChain.map((item) => [
+        item.id,
+        objectivePlannedAmountForMonth(item, month),
+      ]),
+    );
+    const totalPlanned = Object.values(plannedAmounts).reduce(
+      (sum, amount) => sum + amount,
+      0,
+    );
+    const label = formatMonthLabel(month);
+    if (
+      !window.confirm(
+        `Confirmi că ai pus suma completă de ${formatMoney(totalPlanned)} pentru ${label}?`,
+      )
+    ) {
+      return;
+    }
+
+    setCorrectionError("");
+    setCorrectingMonth(month);
+    try {
+      await onSaveContributions(month, plannedAmounts);
+    } catch (error) {
+      setCorrectionError(
+        error instanceof Error
+          ? error.message
+          : "Plata nu a putut fi salvată în istoric.",
+      );
+    } finally {
+      setCorrectingMonth(null);
+    }
+  }
+
   return (
     <div
       className="modal-backdrop"
@@ -1660,18 +1705,32 @@ function ObjectiveHistoryDialog({
                     <span className={`objective-status ${paid ? "status-paid" : "status-overdue"}`}>
                       {paid ? "Pus ✓" : `Lipsă ${formatMoney(remaining)}`}
                     </span>
-                    {row.contributed > 0 && (
-                      <button
-                        className="button history-not-paid"
-                        type="button"
-                        disabled={correctingMonth !== null}
-                        onClick={() => void markMonthAsNotPaid(row.month)}
-                      >
-                        {correctingMonth === row.month
-                          ? "Se corectează…"
-                          : "Nu am pus"}
-                      </button>
-                    )}
+                    <div className="history-actions">
+                      {!paid && (
+                        <button
+                          className="button history-paid-action"
+                          type="button"
+                          disabled={correctingMonth !== null}
+                          onClick={() => void markMonthAsPaid(row.month)}
+                        >
+                          {correctingMonth === row.month
+                            ? "Se salvează…"
+                            : "Am pus"}
+                        </button>
+                      )}
+                      {row.contributed > 0 && (
+                        <button
+                          className="button history-not-paid"
+                          type="button"
+                          disabled={correctingMonth !== null}
+                          onClick={() => void markMonthAsNotPaid(row.month)}
+                        >
+                          {correctingMonth === row.month
+                            ? "Se corectează…"
+                            : "Nu am pus"}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 );
               })}

@@ -177,9 +177,8 @@ select:focus-visible,
   place-items: center;
   margin: 0 auto 20px;
   border-radius: 19px;
-  background: linear-gradient(145deg, #3374f2, #1d4ed8);
-  color: white;
-  font-size: 1.85rem;
+  overflow: hidden;
+  background: white;
   box-shadow: 0 14px 28px rgba(37, 99, 235, 0.24);
 }
 
@@ -405,10 +404,17 @@ select:focus-visible,
   flex: 0 0 auto;
   place-items: center;
   border-radius: 13px;
-  background: var(--primary);
-  color: white;
-  font-size: 1.25rem;
+  overflow: hidden;
+  background: white;
   box-shadow: 0 9px 18px rgba(37, 99, 235, 0.2);
+}
+
+.brand-mark img,
+.mini-brand img {
+  width: 190%;
+  max-width: none;
+  height: 190%;
+  object-fit: contain;
 }
 
 .top-actions {
@@ -1381,6 +1387,11 @@ select:focus-visible,
   font-size: 0.78rem;
 }
 
+.history-row .history-actions {
+  display: flex;
+  gap: 7px;
+}
+
 .history-not-paid {
   min-height: 36px;
   border: 1px solid #fecaca;
@@ -1393,6 +1404,20 @@ select:focus-visible,
 .history-not-paid:hover:not(:disabled) {
   border-color: #fca5a5;
   background: #feecec;
+}
+
+.history-paid-action {
+  min-height: 36px;
+  border: 1px solid #86d7a3;
+  background: #ecfdf3;
+  color: #067647;
+  font-size: 0.73rem;
+  white-space: nowrap;
+}
+
+.history-paid-action:hover:not(:disabled) {
+  border-color: #47b86f;
+  background: #dcfae6;
 }
 
 .history-error {
@@ -1976,12 +2001,12 @@ select:focus-visible,
 
   .history-row > strong,
   .history-row > .objective-status,
-  .history-row > .history-not-paid {
+  .history-row > .history-actions {
     grid-column: 1 / -1;
   }
 
   .history-row > .objective-status,
-  .history-row > .history-not-paid {
+  .history-row > .history-actions {
     justify-self: start;
   }
 
