@@ -4,6 +4,16 @@ Aceasta este copia aplicației „Obiective financiare”, adaptată să ruleze 
 
 Designul, seiful criptat, cheia de recuperare, tabelul, calculele, obiectivele, categoriile, importul JSON și plățile recurente au fost păstrate din aplicația originală.
 
+## Nou în versiunea 1.3
+
+- secțiunea mare „Evidența lunară” a fost eliminată din ecranul principal;
+- fiecare obiectiv afișează direct suma „De pus acum” și statusul său;
+- butonul „Am pus” înregistrează rapid suma integrală sau o sumă parțială;
+- butonul „Istoric” deschide lunile acelui obiectiv numai când sunt necesare;
+- butonul „Am pus toate sumele” confirmă dintr-o dată toate depunerile curente;
+- restanțele sunt calculate separat pentru fiecare obiectiv, fără ca o plată în plus să ascundă restanța altuia;
+- confirmarea unei reînnoiri marchează ciclul ajuns la scadență ca plătit.
+
 ## Nou în versiunea 1.2
 
 - toate obiectivele au câmpul „Am început să pun bani din data”, inclusiv cele nerecurente;

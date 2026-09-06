@@ -19,10 +19,10 @@ import {
   formatMonthLabel,
   isoToRomanianDate,
   monthKey,
-  monthlyTrackingTotals,
   nextRecurringDate,
   objectiveInitialMonthlyAmount,
   objectivePlannedAmountForMonth,
+  objectiveTrackingSummary,
   parseMoneyInput,
   romanianDateToIso,
   trackedMonthKeys,
@@ -514,6 +514,30 @@ export default function ObjectiveVaultApp({
       completed_at: currentIsoDate(),
       renewed_to: renewedId,
     };
+    const currentMonth = monthKey();
+    const paymentSummary = objectiveTrackingSummary(
+      objective,
+      vaultData.contributions,
+    );
+    const existingContribution = contributionForMonth(
+      vaultData.contributions,
+      objective.id,
+      currentMonth,
+    );
+    const contributions = vaultData.contributions.filter(
+      (entry) =>
+        entry.objective_id !== objective.id || entry.luna !== currentMonth,
+    );
+    if (paymentSummary.dueNow > 0) {
+      contributions.push({
+        objective_id: objective.id,
+        luna: currentMonth,
+        suma_pusa: Math.round(
+          (existingContribution + paymentSummary.dueNow) * 100,
+        ) / 100,
+        updated_at: new Date().toISOString(),
+      });
+    }
     await persistData({
       ...vaultData,
       objectives: [
@@ -522,6 +546,7 @@ export default function ObjectiveVaultApp({
         ),
         renewed,
       ],
+      contributions,
     });
     setSelectedId(renewedId);
     setRenewalObjective(null);
@@ -884,59 +909,31 @@ function VaultDashboard({
   );
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState("");
-  const [selectedMonth, setSelectedMonth] = useState(() => monthKey());
-  const [contributionDraft, setContributionDraft] = useState<
-    Record<string, string>
-  >({});
-  const [trackingSaving, setTrackingSaving] = useState(false);
-  const [trackingMessage, setTrackingMessage] = useState("");
-  const [trackingError, setTrackingError] = useState("");
+  const [contributionObjective, setContributionObjective] =
+    useState<Objective | null>(null);
+  const [historyObjective, setHistoryObjective] = useState<Objective | null>(null);
+  const [markingAll, setMarkingAll] = useState(false);
+  const [quickError, setQuickError] = useState("");
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const activeObjectives = useMemo(
     () => data.objectives.filter((objective) => !objective.completed_at),
     [data.objectives],
   );
   const computed = useMemo(
-    () => activeObjectives.map((objective) => computeObjective(objective)),
-    [activeObjectives],
-  );
-  const availableMonths = useMemo(
-    () => trackedMonthKeys(data.objectives),
-    [data.objectives],
-  );
-  const trackingRows = useMemo(
     () =>
-      data.objectives
-        .map((objective) => ({
+      activeObjectives.map((objective) => ({
+        ...computeObjective(objective),
+        tracking: objectiveTrackingSummary(
           objective,
-          planned: objectivePlannedAmountForMonth(objective, selectedMonth),
-          contributed: contributionForMonth(
-            data.contributions,
-            objective.id,
-            selectedMonth,
-          ),
-        }))
-        .filter((row) => row.planned > 0 || row.contributed > 0),
-    [data.contributions, data.objectives, selectedMonth],
-  );
-  const trackingTotals = useMemo(
-    () => monthlyTrackingTotals(data, selectedMonth),
-    [data, selectedMonth],
+          data.contributions,
+        ),
+      })),
+    [activeObjectives, data.contributions],
   );
   const trackingSummary = useMemo(
     () => currentTrackingSummary(data),
     [data],
   );
-
-  useEffect(() => {
-    const nextDraft: Record<string, string> = {};
-    for (const row of trackingRows) {
-      nextDraft[row.objective.id] = row.contributed
-        ? String(row.contributed).replace(".", ",")
-        : "";
-    }
-    setContributionDraft(nextDraft);
-  }, [selectedMonth, data.contributions, trackingRows]);
 
   useEffect(() => {
     function captureInstallPrompt(event: Event) {
@@ -970,41 +967,40 @@ function VaultDashboard({
     }
   }
 
-  function parseContributionValue(value: string): number | null {
-    if (!value.trim()) return 0;
-    const amount = Number(value.trim().replace(/\s/g, "").replace(",", "."));
-    return Number.isFinite(amount) && amount >= 0 ? amount : null;
-  }
-
-  async function saveTrackingMonth() {
-    setTrackingError("");
-    setTrackingMessage("");
-    const amounts: Record<string, number> = {};
-    for (const row of trackingRows) {
-      const amount = parseContributionValue(
-        contributionDraft[row.objective.id] ?? "",
-      );
-      if (amount === null) {
-        setTrackingError(
-          `Verifică suma introdusă pentru „${row.objective.denumire}”.`,
-        );
-        return;
-      }
-      amounts[row.objective.id] = amount;
+  async function markAllAsPaid() {
+    if (trackingSummary.dueNow <= 0) return;
+    if (
+      !window.confirm(
+        `Confirmi că ai pus toate cele ${formatMoney(trackingSummary.dueNow)} necesare acum?`,
+      )
+    ) {
+      return;
     }
-
-    setTrackingSaving(true);
+    const amounts: Record<string, number> = {};
+    for (const objective of data.objectives) {
+      const summary = objectiveTrackingSummary(
+        objective,
+        data.contributions,
+      );
+      if (summary.dueNow > 0) {
+        amounts[objective.id] =
+          Math.round(
+            (summary.contributedThisMonth + summary.dueNow) * 100,
+          ) / 100;
+      }
+    }
+    setQuickError("");
+    setMarkingAll(true);
     try {
-      await onSaveContributions(selectedMonth, amounts);
-      setTrackingMessage(`Sumele pentru ${formatMonthLabel(selectedMonth)} au fost salvate.`);
+      await onSaveContributions(monthKey(), amounts);
     } catch (error) {
-      setTrackingError(
+      setQuickError(
         error instanceof Error
           ? error.message
-          : "Sumele lunii nu au putut fi salvate.",
+          : "Sumele nu au putut fi salvate.",
       );
     } finally {
-      setTrackingSaving(false);
+      setMarkingAll(false);
     }
   }
 
@@ -1055,6 +1051,14 @@ function VaultDashboard({
               <p>Total de pus acum</p>
               <strong>{formatMoney(trackingSummary.dueNow)}</strong>
               <small>Planul lunii + eventualele restanțe</small>
+              <button
+                className="button summary-pay-all"
+                type="button"
+                disabled={trackingSummary.dueNow <= 0 || markingAll}
+                onClick={() => void markAllAsPaid()}
+              >
+                {markingAll ? "Se salvează…" : "Am pus toate sumele"}
+              </button>
             </div>
             <div className="summary-icon" aria-hidden="true">
               ↗
@@ -1089,138 +1093,7 @@ function VaultDashboard({
             </span>
           )}
         </section>
-
-        <section className="tracking-panel">
-          <div className="tracking-heading">
-            <div>
-              <p className="eyebrow">ISTORICUL DEPUNERILOR</p>
-              <h2>Evidența lunară</h2>
-              <p className="tracking-copy">
-                Completează cât ai pus efectiv. Orice diferență rămasă din
-                lunile anterioare se adaugă automat la totalul de pus acum.
-              </p>
-            </div>
-            <label className="month-picker">
-              Luna verificată
-              <select
-                value={selectedMonth}
-                onChange={(event) => {
-                  setSelectedMonth(event.target.value);
-                  setTrackingMessage("");
-                  setTrackingError("");
-                }}
-              >
-                {availableMonths.map((month) => {
-                  const totals = monthlyTrackingTotals(data, month);
-                  const suffix = totals.remaining > 0 ? " — de completat" : " — complet";
-                  return (
-                    <option key={month} value={month}>
-                      {formatMonthLabel(month)}{suffix}
-                    </option>
-                  );
-                })}
-              </select>
-            </label>
-          </div>
-
-          <div className="tracking-stats" aria-label="Rezumatul lunii selectate">
-            <div>
-              <span>Trebuia pus</span>
-              <strong>{formatMoney(trackingTotals.planned)}</strong>
-            </div>
-            <div>
-              <span>Ai înregistrat</span>
-              <strong>{formatMoney(trackingTotals.contributed)}</strong>
-            </div>
-            <div className={trackingTotals.remaining > 0 ? "tracking-alert" : "tracking-ok"}>
-              <span>Diferență</span>
-              <strong>{formatMoney(trackingTotals.remaining)}</strong>
-            </div>
-          </div>
-
-          {trackingRows.length === 0 ? (
-            <div className="tracking-empty">
-              Nu există sume planificate pentru luna selectată.
-            </div>
-          ) : (
-            <div className="tracking-list">
-              {trackingRows.map(({ objective, planned }) => {
-                const draftValue = contributionDraft[objective.id] ?? "";
-                const draftAmount = parseContributionValue(draftValue) ?? 0;
-                const remaining = Math.max(planned - draftAmount, 0);
-                const complete = planned > 0 && remaining <= 0;
-                return (
-                  <div className="tracking-row" key={objective.id}>
-                    <div className="tracking-objective">
-                      <span className="category-glyph" aria-hidden="true">
-                        {categoryGlyph(objective.categorie)}
-                      </span>
-                      <div>
-                        <strong>{objective.denumire}</strong>
-                        <small>Trebuia: {formatMoney(planned)}</small>
-                      </div>
-                    </div>
-                    <label className="tracking-input">
-                      <span>Ai pus</span>
-                      <div className="money-input">
-                        <input
-                          inputMode="decimal"
-                          value={draftValue}
-                          onChange={(event) =>
-                            setContributionDraft((current) => ({
-                              ...current,
-                              [objective.id]: event.target.value,
-                            }))
-                          }
-                          placeholder="0,00"
-                          aria-label={`Suma pusă pentru ${objective.denumire}`}
-                        />
-                        <span>RON</span>
-                      </div>
-                    </label>
-                    <button
-                      className="button button-soft tracking-full-button"
-                      type="button"
-                      onClick={() =>
-                        setContributionDraft((current) => ({
-                          ...current,
-                          [objective.id]: String(planned).replace(".", ","),
-                        }))
-                      }
-                    >
-                      Am pus integral
-                    </button>
-                    <div className={`tracking-status ${complete ? "is-complete" : "is-behind"}`}>
-                      <span>{complete ? "Complet" : selectedMonth < monthKey() ? "Restant" : "Mai trebuie"}</span>
-                      <strong>{formatMoney(remaining)}</strong>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {(trackingError || trackingMessage) && (
-            <p
-              className={trackingError ? "panel-error" : "tracking-success"}
-              role={trackingError ? "alert" : "status"}
-            >
-              {trackingError || trackingMessage}
-            </p>
-          )}
-          {trackingRows.length > 0 && (
-            <div className="tracking-actions">
-              <button
-                className="button button-primary"
-                type="button"
-                disabled={trackingSaving}
-                onClick={() => void saveTrackingMonth()}
-              >
-                {trackingSaving ? "Se salvează…" : "Salvează sumele lunii"}
-              </button>
-            </div>
-          )}
-        </section>
+        {quickError && <p className="panel-error quick-error" role="alert">{quickError}</p>}
 
         <section className="objectives-panel">
           <div className="section-heading">
@@ -1280,8 +1153,9 @@ function VaultDashboard({
                       <th>Data țintă</th>
                       <th>Categorie</th>
                       <th>Zile rămase</th>
-                      <th>Cât trebuie pus pe lună</th>
-                      <th>Acțiune</th>
+                      <th>De pus acum</th>
+                      <th>Status</th>
+                      <th>Acțiuni</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1314,22 +1188,47 @@ function VaultDashboard({
                           <span className="category-pill">{objective.categorie}</span>
                         </td>
                         <td>{objective.daysRemaining ?? "—"}</td>
-                        <td className="monthly-cell">{formatMoney(objective.monthlyAmount)}</td>
+                        <td className="monthly-cell">{formatMoney(objective.tracking.dueNow)}</td>
+                        <td>
+                          <ObjectiveStatus summary={objective.tracking} />
+                        </td>
                         <td className="renew-cell">
-                          {!objective.plata_recurenta && objective.daysRemaining === 0 ? (
+                          <div className="row-actions">
+                            {objective.tracking.dueNow > 0 && (
+                              <button
+                                className="button button-pay"
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setContributionObjective(objective);
+                                }}
+                              >
+                                Am pus
+                              </button>
+                            )}
                             <button
-                              className="button button-renew"
+                              className="button button-soft button-history"
                               type="button"
                               onClick={(event) => {
                                 event.stopPropagation();
-                                onRenew(objective);
+                                setHistoryObjective(objective);
                               }}
                             >
-                              Reînnoiește
+                              Istoric
                             </button>
-                          ) : (
-                            <span className="renew-placeholder">—</span>
-                          )}
+                            {!objective.plata_recurenta && objective.daysRemaining === 0 && (
+                              <button
+                                className="button button-renew"
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  onRenew(objective);
+                                }}
+                              >
+                                Reînnoiește
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -1372,22 +1271,50 @@ function VaultDashboard({
                         <strong>{objective.daysRemaining ?? "—"}</strong>
                       </div>
                       <div className="mobile-monthly">
-                        <span>De pus pe lună</span>
-                        <strong>{formatMoney(objective.monthlyAmount)}</strong>
+                        <span>De pus acum</span>
+                        <strong>{formatMoney(objective.tracking.dueNow)}</strong>
+                      </div>
+                      <div className="mobile-status">
+                        <span>Status</span>
+                        <ObjectiveStatus summary={objective.tracking} />
                       </div>
                     </div>
-                    {!objective.plata_recurenta && objective.daysRemaining === 0 && (
+                    <div className="mobile-objective-actions">
+                      {objective.tracking.dueNow > 0 && (
+                        <button
+                          className="button button-pay"
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setContributionObjective(objective);
+                          }}
+                        >
+                          Am pus banii
+                        </button>
+                      )}
                       <button
-                        className="button button-renew mobile-renew"
+                        className="button button-soft"
                         type="button"
                         onClick={(event) => {
                           event.stopPropagation();
-                          onRenew(objective);
+                          setHistoryObjective(objective);
                         }}
                       >
-                        Reînnoiește obiectivul
+                        Istoric
                       </button>
-                    )}
+                      {!objective.plata_recurenta && objective.daysRemaining === 0 && (
+                        <button
+                          className="button button-renew"
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onRenew(objective);
+                          }}
+                        >
+                          Reînnoiește
+                        </button>
+                      )}
+                    </div>
                   </article>
                 ))}
               </div>
@@ -1411,6 +1338,33 @@ function VaultDashboard({
           </button>
         </div>
       )}
+      {contributionObjective && (
+        <ContributionDialog
+          objective={contributionObjective}
+          contributions={data.contributions}
+          onClose={() => setContributionObjective(null)}
+          onSave={async (amountToAdd) => {
+            const alreadyContributed = contributionForMonth(
+              data.contributions,
+              contributionObjective.id,
+              monthKey(),
+            );
+            await onSaveContributions(monthKey(), {
+              [contributionObjective.id]:
+                Math.round((alreadyContributed + amountToAdd) * 100) / 100,
+            });
+            setContributionObjective(null);
+          }}
+        />
+      )}
+      {historyObjective && (
+        <ObjectiveHistoryDialog
+          objective={historyObjective}
+          objectives={data.objectives}
+          contributions={data.contributions}
+          onClose={() => setHistoryObjective(null)}
+        />
+      )}
       {children}
     </main>
   );
@@ -1424,6 +1378,264 @@ function categoryGlyph(category: string): string {
   if (normalized.includes("cas")) return "C";
   if (normalized.includes("vac")) return "V";
   return category.trim().charAt(0).toUpperCase() || "G";
+}
+
+function ObjectiveStatus({
+  summary,
+}: {
+  summary: {
+    currentPlan: number;
+    contributedThisMonth: number;
+    previousShortfall: number;
+    dueNow: number;
+  };
+}) {
+  if (
+    summary.currentPlan <= 0 &&
+    summary.previousShortfall <= 0 &&
+    summary.contributedThisMonth <= 0
+  ) {
+    return <span className="objective-status status-waiting">În așteptare</span>;
+  }
+  if (summary.dueNow <= 0) {
+    return <span className="objective-status status-paid">Pus ✓</span>;
+  }
+  if (summary.previousShortfall > 0) {
+    return (
+      <span className="objective-status status-overdue">
+        Restant {formatMoney(summary.previousShortfall)}
+      </span>
+    );
+  }
+  return (
+    <span className="objective-status status-current">De pus luna aceasta</span>
+  );
+}
+
+function ContributionDialog({
+  objective,
+  contributions,
+  onClose,
+  onSave,
+}: {
+  objective: Objective;
+  contributions: VaultData["contributions"];
+  onClose: () => void;
+  onSave: (amountToAdd: number) => Promise<void>;
+}) {
+  const summary = objectiveTrackingSummary(objective, contributions);
+  const [mode, setMode] = useState<"full" | "partial">("full");
+  const [amount, setAmount] = useState(
+    String(summary.dueNow).replace(".", ","),
+  );
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setError("");
+    const amountToAdd =
+      mode === "full" ? summary.dueNow : parseMoneyInput(amount);
+    if (!amountToAdd || amountToAdd <= 0) {
+      return setError("Introdu suma pe care ai pus-o.");
+    }
+    setSaving(true);
+    try {
+      await onSave(amountToAdd);
+    } catch (saveError) {
+      setError(
+        saveError instanceof Error
+          ? saveError.message
+          : "Depunerea nu a putut fi salvată.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div
+      className="modal-backdrop"
+      role="presentation"
+      onMouseDown={(event) => event.target === event.currentTarget && onClose()}
+    >
+      <section
+        className="editor-modal contribution-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="contribution-title"
+      >
+        <div className="modal-head">
+          <div>
+            <p className="eyebrow">ÎNREGISTREAZĂ DEPUNEREA</p>
+            <h2 id="contribution-title">{objective.denumire}</h2>
+          </div>
+          <button className="close-button" type="button" onClick={onClose} aria-label="Închide">×</button>
+        </div>
+        <form className="editor-form" onSubmit={submit}>
+          <div className="contribution-summary">
+            <div>
+              <span>De pus acum</span>
+              <strong>{formatMoney(summary.dueNow)}</strong>
+            </div>
+            <div>
+              <span>Restanță inclusă</span>
+              <strong>{formatMoney(summary.previousShortfall)}</strong>
+            </div>
+            <div>
+              <span>Ai pus deja luna aceasta</span>
+              <strong>{formatMoney(summary.contributedThisMonth)}</strong>
+            </div>
+          </div>
+
+          <div className="contribution-choice" role="group" aria-label="Tipul depunerii">
+            <button
+              className={mode === "full" ? "active" : ""}
+              type="button"
+              onClick={() => {
+                setMode("full");
+                setAmount(String(summary.dueNow).replace(".", ","));
+              }}
+            >
+              Am pus suma integrală
+            </button>
+            <button
+              className={mode === "partial" ? "active" : ""}
+              type="button"
+              onClick={() => setMode("partial")}
+            >
+              Am pus doar o parte
+            </button>
+          </div>
+
+          {mode === "partial" && (
+            <label>
+              Suma pusă acum
+              <div className="money-input">
+                <input
+                  inputMode="decimal"
+                  value={amount}
+                  onChange={(event) => setAmount(event.target.value)}
+                  placeholder="0,00"
+                  autoFocus
+                />
+                <span>RON</span>
+              </div>
+              <small className="field-help">
+                Suma se adaugă peste ce ai înregistrat deja luna aceasta.
+              </small>
+            </label>
+          )}
+
+          {error && <p className="form-error" role="alert">{error}</p>}
+          <div className="modal-actions">
+            <span className="modal-spacer" />
+            <button className="button button-soft" type="button" onClick={onClose} disabled={saving}>Anulează</button>
+            <button className="button button-pay" disabled={saving}>
+              {saving ? "Se salvează…" : "Confirmă suma pusă"}
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function ObjectiveHistoryDialog({
+  objective,
+  objectives,
+  contributions,
+  onClose,
+}: {
+  objective: Objective;
+  objectives: Objective[];
+  contributions: VaultData["contributions"];
+  onClose: () => void;
+}) {
+  const objectiveChain = useMemo(() => {
+    const chain: Objective[] = [objective];
+    let previousId = objective.renewed_from;
+    const visited = new Set([objective.id]);
+    while (previousId && !visited.has(previousId)) {
+      const previous = objectives.find((item) => item.id === previousId);
+      if (!previous) break;
+      chain.unshift(previous);
+      visited.add(previous.id);
+      previousId = previous.renewed_from;
+    }
+    return chain;
+  }, [objective, objectives]);
+  const rows = useMemo(
+    () =>
+      trackedMonthKeys(objectiveChain)
+        .map((month) => {
+          const planned = objectiveChain.reduce(
+            (sum, item) =>
+              sum + objectivePlannedAmountForMonth(item, month),
+            0,
+          );
+          const contributed = objectiveChain.reduce(
+            (sum, item) =>
+              sum + contributionForMonth(contributions, item.id, month),
+            0,
+          );
+          return {
+            month,
+            planned: Math.round(planned * 100) / 100,
+            contributed: Math.round(contributed * 100) / 100,
+          };
+        })
+        .filter((row) => row.planned > 0 || row.contributed > 0),
+    [contributions, objectiveChain],
+  );
+
+  return (
+    <div
+      className="modal-backdrop"
+      role="presentation"
+      onMouseDown={(event) => event.target === event.currentTarget && onClose()}
+    >
+      <section
+        className="editor-modal history-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="history-title"
+      >
+        <div className="modal-head">
+          <div>
+            <p className="eyebrow">ISTORIC ASCUNS</p>
+            <h2 id="history-title">{objective.denumire}</h2>
+          </div>
+          <button className="close-button" type="button" onClick={onClose} aria-label="Închide">×</button>
+        </div>
+        <div className="history-content">
+          {rows.length === 0 ? (
+            <p className="history-empty">Nu există încă înregistrări pentru acest obiectiv.</p>
+          ) : (
+            <div className="history-list">
+              {rows.map((row) => {
+                const remaining = Math.max(row.planned - row.contributed, 0);
+                const paid = remaining <= 0;
+                return (
+                  <div className="history-row" key={row.month}>
+                    <strong>{formatMonthLabel(row.month)}</strong>
+                    <div><span>Trebuia</span><b>{formatMoney(row.planned)}</b></div>
+                    <div><span>Ai pus</span><b>{formatMoney(row.contributed)}</b></div>
+                    <span className={`objective-status ${paid ? "status-paid" : "status-overdue"}`}>
+                      {paid ? "Pus ✓" : `Lipsă ${formatMoney(remaining)}`}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <div className="history-footer">
+            <button className="button button-primary" type="button" onClick={onClose}>Închide</button>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
 }
 
 function ObjectiveEditor({
@@ -1817,7 +2029,8 @@ function RenewalDialog({
         <form className="editor-form" onSubmit={submit}>
           <div className="renewal-note">
             Perioada încheiată rămâne în istoricul tău. Aplicația creează un
-            obiectiv nou pentru următoarea reînnoire.
+            obiectiv nou pentru următoarea reînnoire și marchează suma actuală
+            ca fiind pusă.
           </div>
 
           <div className="field-grid two-columns">

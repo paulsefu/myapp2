@@ -315,29 +315,88 @@ export function currentTrackingSummary(
   previousShortfall: number;
   dueNow: number;
 } {
+  const summaries = data.objectives.map((objective) =>
+    objectiveTrackingSummary(objective, data.contributions, referenceDate),
+  );
+  return {
+    currentPlan: roundMoney(
+      summaries.reduce((sum, summary) => sum + summary.currentPlan, 0),
+    ),
+    contributedThisMonth: roundMoney(
+      summaries.reduce(
+        (sum, summary) => sum + summary.contributedThisMonth,
+        0,
+      ),
+    ),
+    previousShortfall: roundMoney(
+      summaries.reduce(
+        (sum, summary) => sum + summary.previousShortfall,
+        0,
+      ),
+    ),
+    dueNow: roundMoney(
+      summaries.reduce((sum, summary) => sum + summary.dueNow, 0),
+    ),
+  };
+}
+
+function roundMoney(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+export function objectiveTrackingSummary(
+  objective: Objective,
+  contributions: MonthlyContribution[],
+  referenceDate = new Date(),
+): {
+  currentPlan: number;
+  contributedThisMonth: number;
+  previousShortfall: number;
+  dueNow: number;
+} {
   const currentMonth = monthKey(referenceDate);
-  const months = trackedMonthKeys(data.objectives, referenceDate);
+  const months = trackedMonthKeys([objective], referenceDate);
   let previousPlanned = 0;
   let previousContributed = 0;
 
   for (const month of months) {
     if (month >= currentMonth) continue;
-    const totals = monthlyTrackingTotals(data, month, referenceDate);
-    previousPlanned += totals.planned;
-    previousContributed += totals.contributed;
+    previousPlanned += objectivePlannedAmountForMonth(
+      objective,
+      month,
+      referenceDate,
+    );
+    previousContributed += contributionForMonth(
+      contributions,
+      objective.id,
+      month,
+    );
   }
 
-  const current = monthlyTrackingTotals(data, currentMonth, referenceDate);
-  const previousShortfall = Math.max(previousPlanned - previousContributed, 0);
-  const dueNow = Math.max(
-    current.planned + previousShortfall - current.contributed,
+  const currentPlan = objectivePlannedAmountForMonth(
+    objective,
+    currentMonth,
+    referenceDate,
+  );
+  const contributedThisMonth = contributionForMonth(
+    contributions,
+    objective.id,
+    currentMonth,
+  );
+  const previousShortfall = Math.max(
+    previousPlanned - previousContributed,
     0,
   );
   return {
-    currentPlan: Math.round(current.planned * 100) / 100,
-    contributedThisMonth: Math.round(current.contributed * 100) / 100,
-    previousShortfall: Math.round(previousShortfall * 100) / 100,
-    dueNow: Math.round(dueNow * 100) / 100,
+    currentPlan: roundMoney(currentPlan),
+    contributedThisMonth: roundMoney(contributedThisMonth),
+    previousShortfall: roundMoney(previousShortfall),
+    dueNow: roundMoney(
+      Math.max(
+        currentPlan + previousShortfall - contributedThisMonth,
+        0,
+      ),
+    ),
   };
 }
 
