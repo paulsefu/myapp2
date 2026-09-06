@@ -21,6 +21,7 @@ import {
   monthKey,
   monthlyTrackingTotals,
   nextRecurringDate,
+  objectiveInitialMonthlyAmount,
   objectivePlannedAmountForMonth,
   parseMoneyInput,
   romanianDateToIso,
@@ -69,6 +70,34 @@ function createObjectiveId(): string {
     hex.slice(8, 10).join(""),
     hex.slice(10, 16).join(""),
   ].join("-");
+}
+
+function localDateFromIso(value: string): Date {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return new Date();
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+}
+
+function firstDayOfNextMonthIso(referenceDate = new Date()): string {
+  const nextMonth = new Date(
+    referenceDate.getFullYear(),
+    referenceDate.getMonth() + 1,
+    1,
+  );
+  return currentIsoDate(nextMonth);
+}
+
+function renewalTargetDate(validityStart: string, years: number): string {
+  const start = localDateFromIso(validityStart);
+  const targetYear = start.getFullYear() + years;
+  const targetMonth = start.getMonth();
+  const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate();
+  const target = new Date(
+    targetYear,
+    targetMonth,
+    Math.min(start.getDate(), lastDay),
+  );
+  return isoToRomanianDate(currentIsoDate(target));
 }
 
 function importedBoolean(value: unknown): boolean {
@@ -137,7 +166,13 @@ function parseDesktopObjectives(value: unknown): Objective[] {
           ? computed.displayDate
           : objective.data_tinta,
       zile_ramase: computed.daysRemaining ?? 0,
-      suma_luna: Math.round(computed.monthlyAmount * 100) / 100,
+      suma_luna:
+        Number(objective.suma_luna) > 0
+          ? Math.round(Number(objective.suma_luna) * 100) / 100
+          : objectiveInitialMonthlyAmount(
+              objective,
+              objective.created_at || currentIsoDate(),
+            ),
     };
   });
 }
@@ -162,6 +197,7 @@ export default function ObjectiveVaultApp({
   const [editorObjective, setEditorObjective] = useState<Objective | "new" | null>(
     null,
   );
+  const [renewalObjective, setRenewalObjective] = useState<Objective | null>(null);
   const [recoveryCode, setRecoveryCode] = useState<string | null>(null);
   const masterKeyRef = useRef<CryptoKey | null>(null);
 
@@ -309,6 +345,7 @@ export default function ObjectiveVaultApp({
     setVaultData(null);
     setSelectedId(null);
     setEditorObjective(null);
+    setRenewalObjective(null);
     setSyncState("idle");
     setMode("setup");
   }
@@ -318,6 +355,7 @@ export default function ObjectiveVaultApp({
     setVaultData(null);
     setSelectedId(null);
     setEditorObjective(null);
+    setRenewalObjective(null);
     setGlobalError("");
     setMode(envelope ? "locked" : "setup");
   }
@@ -441,6 +479,54 @@ export default function ObjectiveVaultApp({
     });
   }
 
+  async function renewObjective(
+    objective: Objective,
+    values: {
+      validityStart: string;
+      savingsStart: string;
+      years: number;
+      amount: number;
+    },
+  ) {
+    if (!vaultData) return;
+    const renewedId = createObjectiveId();
+    const targetDate = renewalTargetDate(values.validityStart, values.years);
+    const draft: Objective = {
+      id: renewedId,
+      denumire: objective.denumire,
+      valoare: values.amount,
+      categorie: objective.categorie,
+      data_tinta: targetDate,
+      plata_recurenta: false,
+      tip_recurenta: "",
+      interval_zile: null,
+      data_start_recurenta: "",
+      created_at: values.savingsStart,
+      renewed_from: objective.id,
+    };
+    const renewed: Objective = {
+      ...draft,
+      zile_ramase: computeObjective(draft).daysRemaining ?? 0,
+      suma_luna: objectiveInitialMonthlyAmount(draft, values.savingsStart),
+    };
+    const completed: Objective = {
+      ...objective,
+      completed_at: currentIsoDate(),
+      renewed_to: renewedId,
+    };
+    await persistData({
+      ...vaultData,
+      objectives: [
+        ...vaultData.objectives.map((item) =>
+          item.id === objective.id ? completed : item,
+        ),
+        renewed,
+      ],
+    });
+    setSelectedId(renewedId);
+    setRenewalObjective(null);
+  }
+
   if (mode === "loading") return <LoadingScreen />;
 
   if (mode === "error") {
@@ -478,7 +564,9 @@ export default function ObjectiveVaultApp({
 
   if (!vaultData) return <LoadingScreen />;
 
-  const selected = vaultData.objectives.find((item) => item.id === selectedId);
+  const selected = vaultData.objectives.find(
+    (item) => item.id === selectedId && !item.completed_at,
+  );
 
   return (
     <VaultDashboard
@@ -492,6 +580,7 @@ export default function ObjectiveVaultApp({
       onAdd={() => setEditorObjective("new")}
       onImport={importDesktopData}
       onSaveContributions={saveMonthlyContributions}
+      onRenew={(objective) => setRenewalObjective(objective)}
       onEdit={() => selected && setEditorObjective(selected)}
       onLock={lockVault}
       onSignOut={onSignOut}
@@ -503,6 +592,13 @@ export default function ObjectiveVaultApp({
           onClose={() => setEditorObjective(null)}
           onSave={saveObjective}
           onDelete={deleteObjective}
+        />
+      )}
+      {renewalObjective && (
+        <RenewalDialog
+          objective={renewalObjective}
+          onClose={() => setRenewalObjective(null)}
+          onRenew={renewObjective}
         />
       )}
       {recoveryCode && (
@@ -758,6 +854,7 @@ function VaultDashboard({
   onAdd,
   onImport,
   onSaveContributions,
+  onRenew,
   onEdit,
   onLock,
   onSignOut,
@@ -776,6 +873,7 @@ function VaultDashboard({
     selectedMonth: string,
     amounts: Record<string, number>,
   ) => Promise<void>;
+  onRenew: (objective: Objective) => void;
   onEdit: () => void;
   onLock: () => void;
   onSignOut: () => Promise<void> | void;
@@ -794,9 +892,13 @@ function VaultDashboard({
   const [trackingMessage, setTrackingMessage] = useState("");
   const [trackingError, setTrackingError] = useState("");
   const importInputRef = useRef<HTMLInputElement | null>(null);
-  const computed = useMemo(
-    () => data.objectives.map((objective) => computeObjective(objective)),
+  const activeObjectives = useMemo(
+    () => data.objectives.filter((objective) => !objective.completed_at),
     [data.objectives],
+  );
+  const computed = useMemo(
+    () => activeObjectives.map((objective) => computeObjective(objective)),
+    [activeObjectives],
   );
   const availableMonths = useMemo(
     () => trackedMonthKeys(data.objectives),
@@ -1179,6 +1281,7 @@ function VaultDashboard({
                       <th>Categorie</th>
                       <th>Zile rămase</th>
                       <th>Cât trebuie pus pe lună</th>
+                      <th>Acțiune</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1212,6 +1315,22 @@ function VaultDashboard({
                         </td>
                         <td>{objective.daysRemaining ?? "—"}</td>
                         <td className="monthly-cell">{formatMoney(objective.monthlyAmount)}</td>
+                        <td className="renew-cell">
+                          {!objective.plata_recurenta && objective.daysRemaining === 0 ? (
+                            <button
+                              className="button button-renew"
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                onRenew(objective);
+                              }}
+                            >
+                              Reînnoiește
+                            </button>
+                          ) : (
+                            <span className="renew-placeholder">—</span>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -1257,6 +1376,18 @@ function VaultDashboard({
                         <strong>{formatMoney(objective.monthlyAmount)}</strong>
                       </div>
                     </div>
+                    {!objective.plata_recurenta && objective.daysRemaining === 0 && (
+                      <button
+                        className="button button-renew mobile-renew"
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onRenew(objective);
+                        }}
+                      >
+                        Reînnoiește obiectivul
+                      </button>
+                    )}
                   </article>
                 ))}
               </div>
@@ -1313,6 +1444,13 @@ function ObjectiveEditor({
     objective ? String(objective.valoare).replace(".", ",") : "",
   );
   const [category, setCategory] = useState(objective?.categorie ?? "General");
+  const [trackingStartDate, setTrackingStartDate] = useState(
+    objective?.created_at?.slice(0, 10) ||
+      (objective?.data_start_recurenta
+        ? romanianDateToIso(objective.data_start_recurenta)
+        : "") ||
+      currentIsoDate(),
+  );
   const [targetDate, setTargetDate] = useState(
     objective ? romanianDateToIso(objective.data_tinta) : "",
   );
@@ -1364,10 +1502,15 @@ function ObjectiveEditor({
           : null,
       data_start_recurenta:
         recurring ? start : "",
-      created_at: objective?.created_at ?? currentIsoDate(),
+      created_at: trackingStartDate,
     };
     return computeObjective(item);
-  }, [category, intervalDays, name, objective?.id, recurrenceType, recurring, startDate, targetDate, value]);
+  }, [category, intervalDays, name, objective?.id, recurrenceType, recurring, startDate, targetDate, trackingStartDate, value]);
+
+  const plannedMonthlyAmount = useMemo(
+    () => objectiveInitialMonthlyAmount(draft, trackingStartDate),
+    [draft, trackingStartDate],
+  );
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -1376,6 +1519,9 @@ function ObjectiveEditor({
     if (!name.trim()) return setError("Completează denumirea.");
     if (!amount) return setError("Introdu o valoare mai mare decât zero.");
     if (!category.trim()) return setError("Completează categoria.");
+    if (!trackingStartDate) {
+      return setError("Selectează data de la care ai început să pui bani.");
+    }
     if (!recurring && !targetDate) return setError("Selectează data țintă.");
     if (recurring) {
       if (!startDate) return setError("Selectează data de început.");
@@ -1394,8 +1540,8 @@ function ObjectiveEditor({
       valoare: amount,
       categorie: category.trim(),
       zile_ramase: draft.daysRemaining ?? 0,
-      suma_luna: Math.round(draft.monthlyAmount * 100) / 100,
-      created_at: objective?.created_at ?? currentIsoDate(),
+      suma_luna: plannedMonthlyAmount,
+      created_at: trackingStartDate,
     };
     delete (item as Partial<typeof draft>).displayDate;
     delete (item as Partial<typeof draft>).daysRemaining;
@@ -1449,6 +1595,19 @@ function ObjectiveEditor({
             <datalist id="objective-categories">
               {categories.map((item) => <option key={item} value={item} />)}
             </datalist>
+          </label>
+
+          <label>
+            Am început să pun bani din data
+            <input
+              type="date"
+              value={trackingStartDate}
+              onChange={(event) => setTrackingStartDate(event.target.value)}
+              onInput={(event) => setTrackingStartDate(event.currentTarget.value)}
+            />
+            <small className="field-help">
+              Această dată stabilește din ce lună apare obiectivul în evidența lunară.
+            </small>
           </label>
 
           {!recurring && (
@@ -1524,7 +1683,7 @@ function ObjectiveEditor({
             </div>
             <div>
               <span>Cât trebuie pus pe lună</span>
-              <strong>{formatMoney(draft.monthlyAmount)}</strong>
+              <strong>{formatMoney(plannedMonthlyAmount)}</strong>
             </div>
           </div>
 
@@ -1556,6 +1715,171 @@ function ObjectiveEditor({
             </button>
             <button className="button button-primary" disabled={saving}>
               {saving ? "Se salvează…" : objective ? "Salvează modificările" : "Salvează"}
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function RenewalDialog({
+  objective,
+  onClose,
+  onRenew,
+}: {
+  objective: Objective;
+  onClose: () => void;
+  onRenew: (
+    objective: Objective,
+    values: {
+      validityStart: string;
+      savingsStart: string;
+      years: number;
+      amount: number;
+    },
+  ) => Promise<void>;
+}) {
+  const [validityStart, setValidityStart] = useState(currentIsoDate());
+  const [savingsStart, setSavingsStart] = useState(firstDayOfNextMonthIso());
+  const [years, setYears] = useState("1");
+  const [amount, setAmount] = useState(
+    String(objective.valoare).replace(".", ","),
+  );
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const yearsNumber = Number(years);
+  const targetDate =
+    validityStart && Number.isInteger(yearsNumber) && yearsNumber > 0
+      ? renewalTargetDate(validityStart, yearsNumber)
+      : "—";
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setError("");
+    const parsedAmount = parseMoneyInput(amount);
+    if (!validityStart) return setError("Selectează data de început a valabilității.");
+    if (!Number.isInteger(yearsNumber) || yearsNumber < 1 || yearsNumber > 50) {
+      return setError("Perioada trebuie să fie între 1 și 50 de ani.");
+    }
+    if (!savingsStart) {
+      return setError("Selectează data de la care începi să pui bani din nou.");
+    }
+    if (!parsedAmount) return setError("Introdu o valoare mai mare decât zero.");
+    const targetIso = romanianDateToIso(
+      renewalTargetDate(validityStart, yearsNumber),
+    );
+    if (localDateFromIso(savingsStart) >= localDateFromIso(targetIso)) {
+      return setError("Data economisirii trebuie să fie înaintea următoarei scadențe.");
+    }
+
+    setSaving(true);
+    try {
+      await onRenew(objective, {
+        validityStart,
+        savingsStart,
+        years: yearsNumber,
+        amount: parsedAmount,
+      });
+    } catch (renewError) {
+      setError(
+        renewError instanceof Error
+          ? renewError.message
+          : "Reînnoirea nu a putut fi salvată.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div
+      className="modal-backdrop"
+      role="presentation"
+      onMouseDown={(event) => event.target === event.currentTarget && onClose()}
+    >
+      <section
+        className="editor-modal renewal-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="renewal-title"
+      >
+        <div className="modal-head">
+          <div>
+            <p className="eyebrow">SCADENȚĂ ATINSĂ</p>
+            <h2 id="renewal-title">Reînnoiește „{objective.denumire}”</h2>
+          </div>
+          <button className="close-button" type="button" onClick={onClose} aria-label="Închide">
+            ×
+          </button>
+        </div>
+
+        <form className="editor-form" onSubmit={submit}>
+          <div className="renewal-note">
+            Perioada încheiată rămâne în istoricul tău. Aplicația creează un
+            obiectiv nou pentru următoarea reînnoire.
+          </div>
+
+          <div className="field-grid two-columns">
+            <label>
+              Începutul noii valabilități
+              <input
+                type="date"
+                value={validityStart}
+                onChange={(event) => setValidityStart(event.target.value)}
+              />
+            </label>
+            <label>
+              Valabilitate în ani
+              <input
+                type="number"
+                min="1"
+                max="50"
+                step="1"
+                inputMode="numeric"
+                value={years}
+                onChange={(event) => setYears(event.target.value)}
+              />
+            </label>
+          </div>
+
+          <div className="field-grid two-columns">
+            <label>
+              Valoare pentru următoarea plată
+              <div className="money-input">
+                <input
+                  inputMode="decimal"
+                  value={amount}
+                  onChange={(event) => setAmount(event.target.value)}
+                  placeholder="0,00"
+                />
+                <span>RON</span>
+              </div>
+            </label>
+            <label>
+              Încep să pun bani din
+              <input
+                type="date"
+                value={savingsStart}
+                onChange={(event) => setSavingsStart(event.target.value)}
+              />
+            </label>
+          </div>
+
+          <div className="renewal-preview">
+            <span>Următoarea dată țintă</span>
+            <strong>{targetDate}</strong>
+          </div>
+
+          {error && <p className="form-error" role="alert">{error}</p>}
+
+          <div className="modal-actions">
+            <span className="modal-spacer" />
+            <button className="button button-soft" type="button" onClick={onClose} disabled={saving}>
+              Anulează
+            </button>
+            <button className="button button-renew" disabled={saving}>
+              {saving ? "Se salvează…" : "Confirmă reînnoirea"}
             </button>
           </div>
         </form>

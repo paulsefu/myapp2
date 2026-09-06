@@ -4,6 +4,14 @@ Aceasta este copia aplicației „Obiective financiare”, adaptată să ruleze 
 
 Designul, seiful criptat, cheia de recuperare, tabelul, calculele, obiectivele, categoriile, importul JSON și plățile recurente au fost păstrate din aplicația originală.
 
+## Nou în versiunea 1.2
+
+- toate obiectivele au câmpul „Am început să pun bani din data”, inclusiv cele nerecurente;
+- istoricul vechi poate fi recalculat corect după completarea datei reale de început;
+- obiectivele ajunse la 0 zile afișează butonul „Reînnoiește”;
+- reînnoirea permite alegerea începutului noii valabilități, a perioadei în ani, a noii valori și a datei de la care începe economisirea;
+- ciclul încheiat rămâne în istoricul lunar, iar următorul ciclu este urmărit separat.
+
 ## Nou în versiunea 1.1
 
 - secțiune „Evidența lunară” pentru toate lunile de la începerea obiectivelor;

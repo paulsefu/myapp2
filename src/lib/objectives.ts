@@ -11,6 +11,9 @@ export type Objective = {
   interval_zile: number | null;
   data_start_recurenta: string;
   created_at?: string;
+  completed_at?: string;
+  renewed_to?: string;
+  renewed_from?: string;
   zile_ramase?: number;
   suma_luna?: number;
 };
@@ -23,7 +26,7 @@ export type MonthlyContribution = {
 };
 
 export type VaultData = {
-  schemaVersion: 2;
+  schemaVersion: 3;
   objectives: Objective[];
   categories: string[];
   contributions: MonthlyContribution[];
@@ -45,7 +48,7 @@ export const DEFAULT_CATEGORIES = [
 
 export function emptyVaultData(): VaultData {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     objectives: [],
     categories: [...DEFAULT_CATEGORIES],
     contributions: [],
@@ -54,7 +57,7 @@ export function emptyVaultData(): VaultData {
 
 export function demoVaultData(): VaultData {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     categories: [...DEFAULT_CATEGORIES, "Abonamente", "Telefon"],
     contributions: [],
     objectives: [
@@ -190,6 +193,31 @@ export function objectiveTrackingStart(
   return startOfMonth(recurringStart ?? createdAt ?? referenceDate);
 }
 
+export function objectiveInitialMonthlyAmount(
+  objective: Objective,
+  trackingStartIso: string,
+): number {
+  const value = Number(objective.valoare) || 0;
+  if (objective.plata_recurenta) {
+    return Math.round(
+      recurringMonthlyAmount(
+        value,
+        objective.tip_recurenta,
+        objective.interval_zile,
+      ) * 100,
+    ) / 100;
+  }
+
+  const start = parseIsoDate(trackingStartIso);
+  const target = parseRomanianDate(objective.data_tinta);
+  if (!start || !target) return 0;
+  const numberOfMonths = Math.max(
+    monthDistance(startOfMonth(target), startOfMonth(start)) + 1,
+    1,
+  );
+  return Math.round((value / numberOfMonths) * 100) / 100;
+}
+
 export function trackedMonthKeys(
   objectives: Objective[],
   referenceDate = new Date(),
@@ -219,6 +247,12 @@ export function objectivePlannedAmountForMonth(
   if (!month) return 0;
   const start = objectiveTrackingStart(objective, referenceDate);
   if (month < start) return 0;
+  if (
+    objective.completed_at &&
+    month > startOfMonth(parseIsoDate(objective.completed_at) ?? referenceDate)
+  ) {
+    return 0;
+  }
 
   const savedMonthlyAmount = Number(objective.suma_luna);
   const monthlyAmount =
@@ -424,17 +458,17 @@ export function computeObjective(
   }
 
   const target = parseRomanianDate(objective.data_tinta);
+  const savedMonthlyAmount = Number(objective.suma_luna);
   return {
     ...objective,
     displayDate: objective.data_tinta || "—",
     daysRemaining: target
       ? Math.max(dayDifference(target, startOfDay(referenceDate)), 0)
       : null,
-    monthlyAmount: targetMonthlyAmount(
-      value,
-      objective.data_tinta,
-      referenceDate,
-    ),
+    monthlyAmount:
+      Number.isFinite(savedMonthlyAmount) && savedMonthlyAmount > 0
+        ? savedMonthlyAmount
+        : targetMonthlyAmount(value, objective.data_tinta, referenceDate),
   };
 }
 
@@ -500,7 +534,10 @@ export function normalizeVaultData(value: unknown): VaultData {
             suma_luna:
               Number.isFinite(savedMonthlyAmount) && savedMonthlyAmount > 0
                 ? savedMonthlyAmount
-                : Math.round(computeObjective(normalized).monthlyAmount * 100) / 100,
+                : objectiveInitialMonthlyAmount(
+                    normalized,
+                    normalized.created_at,
+                  ),
           };
         })
     : [];
@@ -520,7 +557,7 @@ export function normalizeVaultData(value: unknown): VaultData {
     : [];
 
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     objectives,
     contributions,
     categories: Array.from(

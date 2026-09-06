@@ -114,6 +114,17 @@ select:focus-visible,
   background: var(--surface-alt);
 }
 
+.button-renew {
+  background: #16803f;
+  color: white;
+  box-shadow: 0 8px 18px rgba(22, 128, 63, 0.2);
+}
+
+.button-renew:hover:not(:disabled) {
+  background: #116b34;
+  box-shadow: 0 10px 24px rgba(22, 128, 63, 0.25);
+}
+
 .button-danger {
   background: #fff1f2;
   color: var(--danger);
@@ -873,8 +884,28 @@ select:focus-visible,
   white-space: nowrap;
 }
 
+.renew-cell {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.renew-cell .button-renew {
+  min-height: 36px;
+  padding: 8px 12px;
+  font-size: 0.78rem;
+}
+
+.renew-placeholder {
+  color: #c2c8d0;
+}
+
 .mobile-cards {
   display: none;
+}
+
+.mobile-renew {
+  width: 100%;
+  margin-top: 12px;
 }
 
 .empty-state {
@@ -1126,6 +1157,36 @@ select:focus-visible,
   color: var(--muted);
   font-size: 0.76rem;
   line-height: 1.5;
+}
+
+.renewal-note {
+  border: 1px solid #bbdfca;
+  border-radius: 13px;
+  padding: 12px 14px;
+  background: #f0fdf4;
+  color: #24613c;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.renewal-preview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border-radius: 14px;
+  padding: 15px 16px;
+  background: #172033;
+  color: white;
+}
+
+.renewal-preview span {
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 0.76rem;
+}
+
+.renewal-preview strong {
+  font-size: 1.05rem;
 }
 
 .calculation-preview {
