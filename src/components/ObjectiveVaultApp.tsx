@@ -1362,6 +1362,7 @@ function VaultDashboard({
           objective={historyObjective}
           objectives={data.objectives}
           contributions={data.contributions}
+          onSaveContributions={onSaveContributions}
           onClose={() => setHistoryObjective(null)}
         />
       )}
@@ -1545,13 +1546,20 @@ function ObjectiveHistoryDialog({
   objective,
   objectives,
   contributions,
+  onSaveContributions,
   onClose,
 }: {
   objective: Objective;
   objectives: Objective[];
   contributions: VaultData["contributions"];
+  onSaveContributions: (
+    selectedMonth: string,
+    amounts: Record<string, number>,
+  ) => Promise<void>;
   onClose: () => void;
 }) {
+  const [correctingMonth, setCorrectingMonth] = useState<string | null>(null);
+  const [correctionError, setCorrectionError] = useState("");
   const objectiveChain = useMemo(() => {
     const chain: Objective[] = [objective];
     let previousId = objective.renewed_from;
@@ -1589,6 +1597,34 @@ function ObjectiveHistoryDialog({
     [contributions, objectiveChain],
   );
 
+  async function markMonthAsNotPaid(month: string) {
+    const label = formatMonthLabel(month);
+    if (
+      !window.confirm(
+        `Confirmi că nu ai pus bani în ${label}? Suma înregistrată va fi ștearsă și va deveni restanță.`,
+      )
+    ) {
+      return;
+    }
+
+    setCorrectionError("");
+    setCorrectingMonth(month);
+    try {
+      await onSaveContributions(
+        month,
+        Object.fromEntries(objectiveChain.map((item) => [item.id, 0])),
+      );
+    } catch (error) {
+      setCorrectionError(
+        error instanceof Error
+          ? error.message
+          : "Corectarea istoricului nu a putut fi salvată.",
+      );
+    } finally {
+      setCorrectingMonth(null);
+    }
+  }
+
   return (
     <div
       className="modal-backdrop"
@@ -1624,10 +1660,27 @@ function ObjectiveHistoryDialog({
                     <span className={`objective-status ${paid ? "status-paid" : "status-overdue"}`}>
                       {paid ? "Pus ✓" : `Lipsă ${formatMoney(remaining)}`}
                     </span>
+                    {row.contributed > 0 && (
+                      <button
+                        className="button history-not-paid"
+                        type="button"
+                        disabled={correctingMonth !== null}
+                        onClick={() => void markMonthAsNotPaid(row.month)}
+                      >
+                        {correctingMonth === row.month
+                          ? "Se corectează…"
+                          : "Nu am pus"}
+                      </button>
+                    )}
                   </div>
                 );
               })}
             </div>
+          )}
+          {correctionError && (
+            <p className="form-error history-error" role="alert">
+              {correctionError}
+            </p>
           )}
           <div className="history-footer">
             <button className="button button-primary" type="button" onClick={onClose}>Închide</button>

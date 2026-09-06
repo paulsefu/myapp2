@@ -4,6 +4,12 @@ Aceasta este copia aplicației „Obiective financiare”, adaptată să ruleze 
 
 Designul, seiful criptat, cheia de recuperare, tabelul, calculele, obiectivele, categoriile, importul JSON și plățile recurente au fost păstrate din aplicația originală.
 
+## Nou în versiunea 1.4
+
+- lunile care au o sumă înregistrată afișează în „Istoric” butonul „Nu am pus”;
+- după confirmare, înregistrarea greșită este eliminată, luna devine restantă, iar totalurile se recalculează automat;
+- corectarea funcționează și pentru istoricul obiectivelor reînnoite.
+
 ## Nou în versiunea 1.3
 
 - secțiunea mare „Evidența lunară” a fost eliminată din ecranul principal;

@@ -1353,7 +1353,7 @@ select:focus-visible,
 
 .history-row {
   display: grid;
-  grid-template-columns: minmax(135px, 1fr) repeat(2, minmax(95px, 0.65fr)) auto;
+  grid-template-columns: minmax(120px, 1fr) repeat(2, minmax(82px, 0.65fr)) auto auto;
   align-items: center;
   gap: 12px;
   border: 1px solid var(--border);
@@ -1379,6 +1379,24 @@ select:focus-visible,
 .history-row div b {
   margin-top: 3px;
   font-size: 0.78rem;
+}
+
+.history-not-paid {
+  min-height: 36px;
+  border: 1px solid #fecaca;
+  background: #fff7f7;
+  color: #b42318;
+  font-size: 0.73rem;
+  white-space: nowrap;
+}
+
+.history-not-paid:hover:not(:disabled) {
+  border-color: #fca5a5;
+  background: #feecec;
+}
+
+.history-error {
+  margin: 14px 0 0;
 }
 
 .history-empty {
@@ -1957,11 +1975,13 @@ select:focus-visible,
   }
 
   .history-row > strong,
-  .history-row > .objective-status {
+  .history-row > .objective-status,
+  .history-row > .history-not-paid {
     grid-column: 1 / -1;
   }
 
-  .history-row > .objective-status {
+  .history-row > .objective-status,
+  .history-row > .history-not-paid {
     justify-self: start;
   }
 
